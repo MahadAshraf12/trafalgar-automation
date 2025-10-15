@@ -1,27 +1,21 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import JSONStream from 'JSONStream';
 
 // Load environment variables from .env file
 dotenv.config();
-
-// Read the JSON file
-function readTourData() {
-  const filePath = path.join(process.cwd(), 'trafalgar-tours-us.json');
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`JSON file not found: ${filePath}. Run main.js first.`);
-  }
-
-  const data = fs.readFileSync(filePath, 'utf8');
-  return JSON.parse(data);
-}
 
 // Helper functions from working example
 function ensureArray(v) { return v == null ? [] : (Array.isArray(v) ? v : [v]); }
 function safeNum(v) { if (v === undefined || v === null) return null; const n = Number(v); return Number.isNaN(n) ? null : n; }
 function parseDateToUTC(d) { if (!d) return null; try { if (String(d).includes('T')) return new Date(d); return new Date(String(d) + 'T00:00:00Z'); } catch { return null; } }
 function daysInclusive(start, end) { const s = parseDateToUTC(start); const e = parseDateToUTC(end); if (!s || !e) return null; const msPerDay = 24*60*60*1000; const diff = Math.round((e.getTime() - s.getTime())/msPerDay); return diff + 1; }
+
+function logMemory(label) {
+  const mem = process.memoryUsage();
+  console.log(`${label} - RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap Used: ${Math.round(mem.heapUsed / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
+}
 
 // Try to infer a continent from a provided region/country/continent string or common code
 function inferContinentFromRegion(codeOrName) {
@@ -263,22 +257,8 @@ function transformTourToDetails(tour) {
 }
 
 // Save trip details to JSON file
-async function saveTripDetailsToJSON(tours) {
-  console.log(`💾 Processing ${tours.length} tours for trip_details JSON...`);
-
-  // Filter for US tours only
-  const usTours = tours.filter(isUSTour);
-  console.log(`🇺🇸 Filtered to ${usTours.length} US tours (from ${tours.length} total)`);
-
-  let totalDetails = 0;
-  const allDetails = [];
-
-  for (const tour of usTours) {
-    const details = transformTourToDetails(tour);
-    allDetails.push(...details);
-  }
-
-  totalDetails = allDetails.length;
+async function saveTripDetailsToJSON(allDetails) {
+  console.log(`💾 Processing ${allDetails.length} details for trip_details JSON...`);
 
   if (allDetails.length > 0) {
     try {
@@ -288,32 +268,62 @@ async function saveTripDetailsToJSON(tours) {
       const outputPath = path.join(process.cwd(), 'trip_details_us.json');
       await fs.promises.writeFile(outputPath, JSON.stringify(allDetails, null, 2));
 
-      console.log(`Saved ${allDetails.length} trip detail records to ${outputPath}`);
-      return { successCount: allDetails.length, errorCount: 0, totalDetails };
+      console.log(`✅ Saved ${allDetails.length} trip detail records to ${outputPath}`);
+      return { successCount: allDetails.length, errorCount: 0, totalDetails: allDetails.length };
     } catch (error) {
-      console.error('Error saving trip details JSON:', error);
-      return { successCount: 0, errorCount: allDetails.length, totalDetails };
+      console.error('❌ Error saving trip details JSON:', error);
+      return { successCount: 0, errorCount: allDetails.length, totalDetails: allDetails.length };
     }
   }
 
-  console.log(`Trip Details Results: 0 successful, 0 errors, ${totalDetails} total rows processed`);
-  return { successCount: 0, errorCount: 0, totalDetails };
+  console.log(`Trip Details Results: 0 successful, 0 errors, ${allDetails.length} total rows processed`);
+  return { successCount: 0, errorCount: 0, totalDetails: allDetails.length };
 }
 // Main function
 async function processTripDetailsData() {
   try {
     console.log('🚀 Starting trip_details data processing...');
+    logMemory("Start of trip_details.js");
 
-    // Read JSON data
-    const toursData = readTourData();
-    const tours = toursData.tours || [];
-    console.log(`📖 Read ${tours.length} tours from JSON file`);
+    const filePath = path.join(process.cwd(), 'trafalgar-tours-us.json');
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`JSON file not found: ${filePath}. Run main.js first.`);
+    }
 
-    // Save to JSON
-    const results = await saveTripDetailsToJSON(tours);
+    const allDetails = [];
+    let totalTours = 0;
 
-    console.log('✅ Trip details data processing completed!');
-    console.log(`📈 Summary: ${results.successCount} rows saved to JSON, ${results.errorCount} errors, ${results.totalDetails} total rows processed`);
+    return new Promise((resolve, reject) => {
+      const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+      const parser = JSONStream.parse('tours.*');
+      stream.pipe(parser);
+
+      parser.on('data', (tour) => {
+        totalTours++;
+        if (isUSTour(tour)) {
+          const details = transformTourToDetails(tour);
+          allDetails.push(...details);
+        }
+      });
+
+      parser.on('end', async () => {
+        logMemory("After streaming and processing details");
+        console.log(`📖 Processed ${totalTours} tours from JSON file`);
+        const usToursCount = allDetails.length; // Approximate, since details are per departure
+        console.log(`🇺🇸 Filtered to US tours (from ${totalTours} total)`);
+
+        // Save to JSON
+        const results = await saveTripDetailsToJSON(allDetails);
+
+        logMemory("After saving trip_details JSON");
+        console.log('✅ Trip details data processing completed!');
+        console.log(`📈 Summary: ${results.successCount} rows saved to JSON, ${results.errorCount} errors, ${results.totalDetails} total rows processed`);
+        resolve();
+      });
+
+      parser.on('error', reject);
+      stream.on('error', reject);
+    });
 
   } catch (error) {
     console.error('❌ Error processing trip details data:', error);

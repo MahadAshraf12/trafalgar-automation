@@ -1,21 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import JSONStream from 'JSONStream';
 
 // Load environment variables from .env file
 dotenv.config();
-
-// Read the JSON file
-function readTourData() {
-  const filePath = path.join(process.cwd(), 'trafalgar-tours-us.json');
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`JSON file not found: ${filePath}. Run main.js first.`);
-  }
-
-  const data = fs.readFileSync(filePath, 'utf8');
-  return JSON.parse(data);
-}
 
 // Helper functions from working example
 function ensureArray(v) { return v == null ? [] : (Array.isArray(v) ? v : [v]); }
@@ -25,6 +14,11 @@ function daysInclusive(start, end) { const s = parseDateToUTC(start); const e = 
 
 function first(arr, fallback = null) {
   return Array.isArray(arr) && arr.length > 0 ? arr[0] : fallback;
+}
+
+function logMemory(label) {
+  const mem = process.memoryUsage();
+  console.log(`${label} - RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap Used: ${Math.round(mem.heapUsed / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
 }
 
 // Try to infer a continent from a provided region/country/continent string or common code
@@ -394,14 +388,8 @@ function transformTourData(tour) {
 }
 
 // Save trips to JSON file
-async function saveTripsToJSON(tours) {
-  console.log(`💾 Processing ${tours.length} tours for trips JSON...`);
-
-  // Filter for US tours only
-  const usTours = tours.filter(isUSTour);
-  console.log(`🇺🇸 Filtered to ${usTours.length} US tours (from ${tours.length} total)`);
-
-  const transformedTrips = usTours.map(transformTourData);
+async function saveTripsToJSON(transformedTrips) {
+  console.log(`💾 Processing ${transformedTrips.length} trips for trips JSON...`);
 
   // Save to JSON file
   const outputPath = path.join(process.cwd(), 'trips.json');
@@ -416,21 +404,50 @@ async function saveTripsToJSON(tours) {
   }
 }
 
-// Main function
 async function processTripsData() {
   try {
     console.log('🚀 Starting trips data processing...');
+    logMemory("Start of trips.js");
 
-    // Read JSON data
-    const toursData = readTourData();
-    const tours = toursData.tours || []; // Extract tours array
-    console.log(`📖 Read ${tours.length} tours from JSON file`);
+    const filePath = path.join(process.cwd(), 'trafalgar-tours-us.json');
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`JSON file not found: ${filePath}. Run main.js first.`);
+    }
 
-    // Save to JSON
-    const results = await saveTripsToJSON(tours);
+    const tours = [];
+    let totalTours = 0;
 
-    console.log('✅ Trips data processing completed!');
-    console.log(`📈 Summary: ${results.successCount} trips saved to JSON, ${results.errorCount} errors`);
+    return new Promise((resolve, reject) => {
+      const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+      const parser = JSONStream.parse('tours.*');
+      stream.pipe(parser);
+
+      parser.on('data', (tour) => {
+        totalTours++;
+        if (isUSTour(tour)) {
+          tours.push(transformTourData(tour));
+        }
+        // To prevent memory buildup, process in batches if needed, but since output is small, ok
+      });
+
+      parser.on('end', async () => {
+        logMemory("After streaming and processing tours");
+        console.log(`📖 Processed ${totalTours} tours from JSON file`);
+        const usToursCount = tours.length;
+        console.log(`🇺🇸 Filtered to ${usToursCount} US tours (from ${totalTours} total)`);
+
+        // Save to JSON
+        const results = await saveTripsToJSON(tours);
+
+        logMemory("After saving trips JSON");
+        console.log('✅ Trips data processing completed!');
+        console.log(`📈 Summary: ${results.successCount} trips saved to JSON, ${results.errorCount} errors`);
+        resolve();
+      });
+
+      parser.on('error', reject);
+      stream.on('error', reject);
+    });
 
   } catch (error) {
     console.error('❌ Error processing trips data:', error);

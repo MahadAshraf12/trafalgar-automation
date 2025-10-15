@@ -13,6 +13,12 @@ const acceptHeader = "application/json"; // works fine for TTC
 const REGION = "us"; // ✅ target region
 
 
+function logMemory(label) {
+  const mem = process.memoryUsage();
+  console.log(`${label} - RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap Used: ${Math.round(mem.heapUsed / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
+}
+
+
 if (!API_TOKEN) {
   console.error("❌ Error: VITE_TTC_API_TOKEN is not set. Add it to your .env file.");
   process.exit(1);
@@ -59,6 +65,8 @@ async function fetchUSTours(page = 1, limit = 1000) {
 
 (async () => {
   try {
+    logMemory("Start of main.js");
+
     let page = 1;
     const allTours = [];
     let hasMore = true;
@@ -92,6 +100,8 @@ async function fetchUSTours(page = 1, limit = 1000) {
     await fs.writeFile(outFile, JSON.stringify({ tours: allTours }, null, 2), "utf8");
     console.log(`💾 Saved ${allTours.length} tours to ${outFile}` );
 
+    logMemory("After fetching and saving tours");
+
     // Scrape trip codes
     console.log('📊 Scraping trip codes...');
     try {
@@ -100,6 +110,8 @@ async function fetchUSTours(page = 1, limit = 1000) {
     } catch (err) {
       console.error('❌ Error during scraping:', err.message);
     }
+
+    logMemory("After scraping trip codes");
 
     // Process trips and trip details
     console.log('📊 Processing trips and trip details...');
@@ -111,6 +123,8 @@ async function fetchUSTours(page = 1, limit = 1000) {
       console.error('❌ Error during processing:', err.message);
     }
 
+    logMemory("After processing trips and details");
+
     // Insert to database
     console.log('🗄️ Inserting data to database...');
     try {
@@ -119,6 +133,8 @@ async function fetchUSTours(page = 1, limit = 1000) {
     } catch (err) {
       console.error('❌ Error during database insertion:', err.message);
     }
+
+    logMemory("End of main.js");
 
   } catch (err) {
     console.error("❌ Failed to fetch/save tours:", err.message || err);

@@ -4,6 +4,11 @@
 import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
 
+function logMemory(label) {
+  const mem = process.memoryUsage();
+  console.log(`${label} - RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap Used: ${Math.round(mem.heapUsed / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
+}
+
 // ---------------- Configuration ----------------
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://vrcnwvcsvsudmtokdapd.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZyY253dmNzdnN1ZG10b2tkYXBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1Nzk5NjUsImV4cCI6MjA3MzE1NTk2NX0.n_0YTReO8Qqyfi-ajw2ixKl4yOne5xbaf9dBNqo-ius"; // service_role key preferred
@@ -91,6 +96,8 @@ async function upsertBatch(table, entries, conflictKey) {
 }
 
 (async () => {
+  logMemory("Start of insert_to_db.js");
+
   let totalSuccess = 0;
   let totalFailed = 0;
   const failedDetails = [];
@@ -136,6 +143,7 @@ async function upsertBatch(table, entries, conflictKey) {
     console.log("Wrote failed details to", pathErr);
   }
 
+  logMemory("End of insert_to_db.js");
   console.log("Done.");
   process.exit(0);
 })();
