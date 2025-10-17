@@ -12,6 +12,14 @@ function safeNum(v) { if (v === undefined || v === null) return null; const n = 
 function parseDateToUTC(d) { if (!d) return null; try { if (String(d).includes('T')) return new Date(d); return new Date(String(d) + 'T00:00:00Z'); } catch { return null; } }
 function daysInclusive(start, end) { const s = parseDateToUTC(start); const e = parseDateToUTC(end); if (!s || !e) return null; const msPerDay = 24*60*60*1000; const diff = Math.round((e.getTime() - s.getTime())/msPerDay); return diff + 1; }
 
+function mapAvailability(avail) {
+  if (!avail) return 0;
+  const a = String(avail).toLowerCase();
+  if (a === 'available') return 1;
+  if (a === 'onrequest' || a === 'on_request') return 0;
+  return 0; // default
+}
+
 function logMemory(label) {
   const mem = process.memoryUsage();
   console.log(`${label} - RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap Used: ${Math.round(mem.heapUsed / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
@@ -178,7 +186,7 @@ function transformTourToDetails(tour) {
           trip_prev_price: prevPrice,
           duration: duration,
           region: continentValue,
-          availability: availability,
+          availability: mapAvailability(availability),
           max_group_size: maxGroupSize,
           min_group_size: 1,
           avg_group_size: null
@@ -243,7 +251,7 @@ function transformTourToDetails(tour) {
             trip_prev_price: prevPrice,
             duration: duration,
             region: continentValue,
-            availability: availability,
+            availability: mapAvailability(availability),
             max_group_size: maxGroupSize,
             min_group_size: 1,
             avg_group_size: null

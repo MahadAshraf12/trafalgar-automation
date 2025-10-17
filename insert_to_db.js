@@ -36,20 +36,43 @@ if (!fs.existsSync('./trip_details_us.json')) {
 }
 const tripDetailsData = JSON.parse(fs.readFileSync('./trip_details_us.json', 'utf8'));
 
+// Load trip ratings data
+if (!fs.existsSync('./trip_ratings.json')) {
+  console.error("ERROR: trip_ratings.json not found");
+  process.exit(1);
+}
+const tripRatingsData = JSON.parse(fs.readFileSync('./trip_ratings.json', 'utf8'));
+
+// Create ratings map
+const ratingsMap = new Map();
+tripRatingsData.forEach(rating => {
+  ratingsMap.set(rating.trip_id, {
+    avg_rating: rating.avg_rating,
+    total_reviews: rating.total_reviews
+  });
+});
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Prepare trips entries
-const tripsEntries = tripsData.map(trip => ({
-  trip_id: trip.trip_id,
-  trip_productline: trip.trip_product_line,
-  region: trip.region,
-  trip_description: trip.trip_description,
-  banner_image: trip.banner_image,
-  group_size: `Max ${trip.group_size_max}, Avg ${trip.group_size_avg}`,
-  departures: trip.departures, // assuming JSONB column
-  duration: trip.duration,
-  reviews: trip.reviews
-}));
+const tripsEntries = tripsData.map(trip => {
+  const ratings = ratingsMap.get(trip.trip_id);
+  return {
+    trip_id: trip.trip_id,
+    name: trip.trip_name, // table column is 'name'
+    trip_productline: trip.trip_product_line,
+    region: trip.region,
+    trip_description: trip.trip_description,
+    banner_image: trip.banner_image,
+    departures: trip.departures, // assuming JSONB column
+    advertised_departures: trip.advertised_departures, // assuming JSONB column
+    duration: trip.duration,
+    trip_current_price: trip.trip_current_price, // numeric
+    reviews: trip.reviews,
+    avg_rating: ratings?.avg_rating || null,
+    total_reviews: ratings?.total_reviews || null
+  };
+});
 
 // Prepare trip details entries
 let tripDetailsEntries = tripDetailsData.map(detail => ({
@@ -68,12 +91,12 @@ let tripDetailsEntries = tripDetailsData.map(detail => ({
   avg_group_size: detail.avg_group_size
 }));
 
-// Deduplicate based on trip_id and departure_id
-const uniqueDetails = tripDetailsEntries.filter((item, index, self) =>
-  index === self.findIndex(t => t.trip_id === item.trip_id && t.departure_id === item.departure_id)
+// Filter invalid entries
+const uniqueDetails = tripDetailsEntries.filter(item =>
+  item.trip_id && item.departure_id && item.start_date && item.end_date
 );
 
-console.log(`Prepared ${tripsEntries.length} trips and ${uniqueDetails.length} unique trip details for upsert.`);
+console.log(`Prepared ${tripsEntries.length} trips and ${uniqueDetails.length} valid trip details for upsert.`);
 
 // Helper: split into chunks
 function chunk(arr, size) {
@@ -86,11 +109,14 @@ async function upsertBatch(table, entries, conflictKey) {
   try {
     const { data, error } = await supabase
       .from(table)
-      .upsert(entries, { onConflict: conflictKey, ignoreDuplicates: false });
-
-    if (error) throw error;
+      .insert(entries);
+    if (error) {
+      console.error(`Error inserting batch:`, error);
+      return { success: false, error: error.message, entries };
+    }
     return { success: true, count: entries.length };
   } catch (err) {
+    console.error(`Unexpected error:`, err);
     return { success: false, error: err.message, entries };
   }
 }
@@ -103,6 +129,8 @@ async function upsertBatch(table, entries, conflictKey) {
   const failedDetails = [];
 
   // Upsert trips
+  console.log('Truncating trips table...');
+  await supabase.from(TRIPS_TABLE).delete().neq('trip_id', 0); // truncate
   const tripsBatches = chunk(tripsEntries, BATCH_SIZE);
   for (let i = 0; i < tripsBatches.length; i++) {
     const batch = tripsBatches[i];
@@ -118,11 +146,13 @@ async function upsertBatch(table, entries, conflictKey) {
   }
 
   // Upsert trip details
+  console.log('Truncating trip_details table...');
+  await supabase.from(TRIP_DETAILS_TABLE).delete().neq('id', 0); // truncate by deleting all
   const detailsBatches = chunk(uniqueDetails, BATCH_SIZE);
   for (let i = 0; i < detailsBatches.length; i++) {
     const batch = detailsBatches[i];
     console.log(`Upserting trip_details batch ${i + 1}/${detailsBatches.length} (${batch.length} items)...`);
-    const result = await upsertBatch(TRIP_DETAILS_TABLE, batch, 'departure_id');
+    const result = await upsertBatch(TRIP_DETAILS_TABLE, batch, 'trip_id, departure_id');
     if (result.success) {
       totalSuccess += result.count;
     } else {

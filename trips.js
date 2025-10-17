@@ -247,6 +247,7 @@ function transformTourData(tour) {
 
   const trip = {};
   trip.trip_id = tour.id || null;
+  trip.trip_name = tour.name || tour.title || tour.tourName || '';
   trip.trip_product_line = tripCode || tour.tourType || '';
   trip.region = ''; // Will be populated from departures
 

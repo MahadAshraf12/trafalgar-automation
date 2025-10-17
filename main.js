@@ -125,6 +125,17 @@ async function fetchUSTours(page = 1, limit = 1000) {
 
     logMemory("After processing trips and details");
 
+    // Scrape ratings
+    console.log('📊 Scraping trip ratings...');
+    try {
+      execSync('node scrape-trafalgar-feefo-fixed-2.js', { stdio: 'inherit' });
+      console.log('✅ Trip ratings scraped successfully!');
+    } catch (err) {
+      console.error('❌ Error during ratings scraping:', err.message);
+    }
+
+    logMemory("After scraping ratings");
+
     // Insert to database
     console.log('🗄️ Inserting data to database...');
     try {
