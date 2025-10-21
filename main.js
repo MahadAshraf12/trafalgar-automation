@@ -136,6 +136,15 @@ async function fetchUSTours(page = 1, limit = 1000) {
 
     logMemory("After scraping ratings");
 
+    // Fetch activity levels (scrape from Trafalgar pages)
+    console.log('📊 Fetching activity levels...');
+    try {
+      execSync('node fetch-activity-level.js', { stdio: 'inherit' });
+      console.log('✅ Activity levels fetched successfully!');
+    } catch (err) {
+      console.error('❌ Error during activity level fetch:', err.message);
+    }
+
     // Insert to database
     console.log('🗄️ Inserting data to database...');
     try {

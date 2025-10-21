@@ -43,6 +43,23 @@ if (!fs.existsSync('./trip_ratings.json')) {
 }
 const tripRatingsData = JSON.parse(fs.readFileSync('./trip_ratings.json', 'utf8'));
 
+// Read scraped activity levels and build a map (trip_id -> activity_level)
+const ACTIVITY_LEVELS_PATH = './json_files/trip_tweaked_icons.json';
+let activityLevelMap = new Map();
+if (fs.existsSync(ACTIVITY_LEVELS_PATH)) {
+  try {
+    const activityJson = JSON.parse(fs.readFileSync(ACTIVITY_LEVELS_PATH, 'utf8'));
+    activityLevelMap = new Map(activityJson
+      .filter(x => x && typeof x.trip_id !== 'undefined')
+      .map(x => [x.trip_id, x.activity_level || null])
+    );
+  } catch (e) {
+    console.warn('Warning: failed reading activity levels:', e.message);
+  }
+} else {
+  console.warn(`Warning: ${ACTIVITY_LEVELS_PATH} not found; skipping activity levels`);
+}
+
 // Create ratings map
 const ratingsMap = new Map();
 tripRatingsData.forEach(rating => {
@@ -60,8 +77,10 @@ const tripsEntries = tripsData.map(trip => {
   return {
     trip_id: trip.trip_id,
     name: trip.trip_name, // table column is 'name'
+    trip_provider: 'TRAFALGAR',
     trip_productline: trip.trip_product_line,
     region: trip.region,
+    service_level: 'Standard',
     trip_description: trip.trip_description,
     banner_image: trip.banner_image,
     departures: trip.departures, // assuming JSONB column
@@ -69,8 +88,9 @@ const tripsEntries = tripsData.map(trip => {
     duration: trip.duration,
     trip_current_price: trip.trip_current_price, // numeric
     reviews: trip.reviews,
-    avg_rating: ratings?.avg_rating || null,
-    total_reviews: ratings?.total_reviews || null
+    avg_rating: ratings?.avg_rating ?? undefined,
+    total_reviews: ratings?.total_reviews ?? undefined,
+    activity_level: activityLevelMap.get(trip.trip_id) ?? undefined
   };
 });
 
@@ -105,11 +125,22 @@ function chunk(arr, size) {
   return out;
 }
 
+// Helper: remove null/undefined so we don't overwrite existing values with nulls
+function stripNullish(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== null && v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 async function upsertBatch(table, entries, conflictKey) {
   try {
+    // Ensure each row omits null/undefined fields
+    const sanitized = entries.map(stripNullish);
     const { data, error } = await supabase
       .from(table)
-      .insert(entries);
+      .upsert(sanitized, { onConflict: conflictKey, ignoreDuplicates: false, defaultToNull: false });
     if (error) {
       console.error(`Error inserting batch:`, error);
       return { success: false, error: error.message, entries };
@@ -128,9 +159,7 @@ async function upsertBatch(table, entries, conflictKey) {
   let totalFailed = 0;
   const failedDetails = [];
 
-  // Upsert trips
-  console.log('Truncating trips table...');
-  await supabase.from(TRIPS_TABLE).delete().neq('trip_id', 0); // truncate
+  // Upsert trips (no truncation; preserve other providers and existing rows)
   const tripsBatches = chunk(tripsEntries, BATCH_SIZE);
   for (let i = 0; i < tripsBatches.length; i++) {
     const batch = tripsBatches[i];
@@ -145,14 +174,12 @@ async function upsertBatch(table, entries, conflictKey) {
     if (i < tripsBatches.length - 1) await new Promise(res => setTimeout(res, BATCH_DELAY_MS));
   }
 
-  // Upsert trip details
-  console.log('Truncating trip_details table...');
-  await supabase.from(TRIP_DETAILS_TABLE).delete().neq('id', 0); // truncate by deleting all
+  // Upsert trip details (no truncation; preserve existing rows)
   const detailsBatches = chunk(uniqueDetails, BATCH_SIZE);
   for (let i = 0; i < detailsBatches.length; i++) {
     const batch = detailsBatches[i];
     console.log(`Upserting trip_details batch ${i + 1}/${detailsBatches.length} (${batch.length} items)...`);
-    const result = await upsertBatch(TRIP_DETAILS_TABLE, batch, 'trip_id, departure_id');
+    const result = await upsertBatch(TRIP_DETAILS_TABLE, batch, 'trip_id,departure_id');
     if (result.success) {
       totalSuccess += result.count;
     } else {
