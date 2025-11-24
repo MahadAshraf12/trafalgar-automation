@@ -1,163 +1,102 @@
-import fs from "fs/promises";
-import dotenv from "dotenv";
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-dotenv.config();
+function runCommand(command, args, cwd, description) {
+  return new Promise((resolve, reject) => {
+    console.log(`\n🚀 Starting: ${description}`);
+    console.log(`📂 Directory: ${cwd}`);
+    console.log(`💻 Command: ${command} ${args.join(' ')}`);
+    console.log('─'.repeat(50));
 
+    const child = spawn(command, args, {
+      cwd: cwd,
+      stdio: 'inherit',
+      shell: true
+    });
 
-const API_BASE = process.env.TTC_API_BASE || "https://api.ttc.com";
-const API_TOKEN = process.env.VITE_TTC_API_TOKEN;
-const INCLUDE = process.env.INCLUDE || "content,departures"; // include details
-const acceptHeader = "application/json"; // works fine for TTC
-const REGION = "us"; // ✅ target region
+    child.on('error', (error) => {
+      console.error(`❌ Error in ${description}:`, error);
+      reject(error);
+    });
 
-
-function logMemory(label) {
-  const mem = process.memoryUsage();
-  console.log(`${label} - RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap Used: ${Math.round(mem.heapUsed / 1024 / 1024)}MB, External: ${Math.round(mem.external / 1024 / 1024)}MB`);
-}
-
-
-if (!API_TOKEN) {
-  console.error("❌ Error: VITE_TTC_API_TOKEN is not set. Add it to your .env file.");
-  process.exit(1);
-}
-
-
-function basicAuthHeader(token) {
-  const pair = `token:${token}` ;
-  return `Basic ${Buffer.from(pair, "utf8").toString("base64")}` ;
-}
-
-
-async function fetchUSTours(page = 1, limit = 1000) {
-  const url = `${API_BASE}/brands/trafalgar/tours?regions=${REGION}&page=${page}&limit=${limit}&include=${INCLUDE}` ;
-  console.log(`🌎 Fetching US-only Trafalgar tours (page ${page})` );
-
-
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      Accept: acceptHeader,
-      "Content-Type": "application/json",
-      Authorization: basicAuthHeader(API_TOKEN),
-    },
+    child.on('exit', (code) => {
+      if (code === 0) {
+        console.log(`✅ Completed: ${description}`);
+        console.log('─'.repeat(50));
+        resolve();
+      } else {
+        console.error(`❌ Failed: ${description} (exit code: ${code})`);
+        reject(new Error(`${description} failed with exit code ${code}`));
+      }
+    });
   });
-
-
-  if (res.status === 401) throw new Error("401 Unauthorized - check API token.");
-  if (res.status === 403) throw new Error("403 Forbidden - token not permitted.");
-  if (res.status === 429) {
-    const ra = res.headers.get("retry-after") || "unknown";
-    throw new Error(`429 Too Many Requests. Retry-After: ${ra}` );
-  }
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`HTTP ${res.status}: ${t}` );
-  }
-
-
-  const data = await res.json();
-  return data;
 }
 
+async function runAllPipelines() {
+  console.log('🌟 TRAFALGAR AUTOMATION - MASTER PIPELINE');
+  console.log('═'.repeat(50));
+  console.log('This will run all three data pipelines in sequence:');
+  console.log('1. Trafalgar (trafalgar/ folder)');
+  console.log('2. Insight Vacations (insightvacations/ folder)');
+  console.log('3. CostSaver (costsaver/ folder)');
+  console.log('');
+  console.log('🧠 Memory-optimized for low-RAM VPS (512MB)');
+  console.log('   - Batch processing (5 tours at a time)');
+  console.log('   - 2-second delays between batches');
+  console.log('   - Memory monitoring enabled');
+  console.log('═'.repeat(50));
+  console.log(`🧠 Starting memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
 
-(async () => {
   try {
-    logMemory("Start of main.js");
+    // 1. Run Trafalgar pipeline
+    await runCommand(
+      'node',
+      ['main.js'],
+      join(__dirname, 'trafalgar'),
+      'Trafalgar Pipeline'
+    );
 
-    let page = 1;
-    const allTours = [];
-    let hasMore = true;
+    // 2. Run Insight Vacations pipeline
+    await runCommand(
+      'node',
+      ['main.js'],
+      join(__dirname, 'insightvacations'),
+      'Insight Vacations Pipeline'
+    );
 
+    // 3. Run CostSaver pipeline
+    await runCommand(
+      'node',
+      ['main.js'],
+      join(__dirname, 'costsaver'),
+      'CostSaver Pipeline'
+    );
 
-    console.log("🚀 Starting TTC Trafalgar US-only tours fetch...");
+    console.log('\n🎉 ALL PIPELINES COMPLETED SUCCESSFULLY!');
+    console.log('═'.repeat(50));
+    console.log('📊 Summary:');
+    console.log('✅ Trafalgar data processed and inserted');
+    console.log('✅ Insight Vacations data processed and inserted');
+    console.log('✅ CostSaver data processed and inserted');
+    console.log(`🧠 Final memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
+    console.log('═'.repeat(50));
+    console.log('💡 Memory optimization tips for VPS:');
+    console.log('   - Run with: node --expose-gc main.js');
+    console.log('   - Monitor memory with: htop or free -h');
+    console.log('   - Batch size: 5 tours, 2s delays');
+    console.log('═'.repeat(50));
 
-
-    while (hasMore) {
-      const result = await fetchUSTours(page, 50);
-
-
-      if (!result?.tours || result.tours.length === 0) break;
-
-
-      console.log(`📦 Page ${page}: ${result.tours.length} tours` );
-      allTours.push(...result.tours);
-
-      // Stop if no more pages
-      const totalPages = result.totalPages || 1;
-      hasMore = page < totalPages;
-      page++;
-      await new Promise(r => setTimeout(r, 500)); // simple rate limit
-    }
-
-
-    console.log(`✅ Total US-only tours fetched: ${allTours.length}` );
-
-
-    const outFile = `trafalgar-tours-us.json` ;
-    await fs.writeFile(outFile, JSON.stringify({ tours: allTours }, null, 2), "utf8");
-    console.log(`💾 Saved ${allTours.length} tours to ${outFile}` );
-
-    logMemory("After fetching and saving tours");
-
-    // Scrape trip codes
-    console.log('📊 Scraping trip codes...');
-    try {
-      execSync('node scrape_trip_codes.js', { stdio: 'inherit' });
-      console.log('✅ Trip codes scraped successfully!');
-    } catch (err) {
-      console.error('❌ Error during scraping:', err.message);
-    }
-
-    logMemory("After scraping trip codes");
-
-    // Process trips and trip details
-    console.log('📊 Processing trips and trip details...');
-    try {
-      execSync('node trips.js', { stdio: 'inherit' });
-      execSync('node trip_details.js', { stdio: 'inherit' });
-      console.log('✅ Processing completed successfully!');
-    } catch (err) {
-      console.error('❌ Error during processing:', err.message);
-    }
-
-    logMemory("After processing trips and details");
-
-    // Scrape ratings
-    console.log('📊 Scraping trip ratings...');
-    try {
-      execSync('node scrape-trafalgar-feefo-fixed-2.js', { stdio: 'inherit' });
-      console.log('✅ Trip ratings scraped successfully!');
-    } catch (err) {
-      console.error('❌ Error during ratings scraping:', err.message);
-    }
-
-    logMemory("After scraping ratings");
-
-    // Fetch activity levels (scrape from Trafalgar pages)
-    console.log('📊 Fetching activity levels...');
-    try {
-      execSync('node fetch-activity-level.js', { stdio: 'inherit' });
-      console.log('✅ Activity levels fetched successfully!');
-    } catch (err) {
-      console.error('❌ Error during activity level fetch:', err.message);
-    }
-
-    // Insert to database
-    console.log('🗄️ Inserting data to database...');
-    try {
-      execSync('node insert_to_db.js', { stdio: 'inherit' });
-      console.log('✅ Database insertion completed!');
-    } catch (err) {
-      console.error('❌ Error during database insertion:', err.message);
-    }
-
-    logMemory("End of main.js");
-
-  } catch (err) {
-    console.error("❌ Failed to fetch/save tours:", err.message || err);
+  } catch (error) {
+    console.error('\n💥 PIPELINE FAILED!');
+    console.error('Error:', error.message);
+    console.log('\n🔍 Check the error messages above to identify which pipeline failed.');
     process.exit(1);
   }
-})();
+}
+
+// Run the master pipeline
+runAllPipelines().catch(console.error);

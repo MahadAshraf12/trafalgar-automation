@@ -1,0 +1,22 @@
+{
+  "name": "insightvacations-pipeline",
+  "version": "1.0.0",
+  "description": "Insight Vacations: fetch trips, scrape Feefo, extract ratings, build JSON, and upsert to DB",
+  "type": "module",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.4.5",
+    "JSONStream": "^1.3.5",
+    "openai": "^6.9.1",
+    "playwright": "^1.56.1",
+    "puppeteer": "^22.12.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "costsaver-scraper",
+  "version": "1.0.0",
+  "description": "Scraper for Costsaver tour data",
+  "main": "scrape_trip_codes.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --max-old-space-size=512 scrape_trip_codes.js",
+    "fetch-reviews": "node --expose-gc --max-old-space-size=512 fetch_feefo_reviews.js",
+    "fetch-reviews-prod": "NODE_ENV=production node --expose-gc --max-old-space-size=512 fetch_feefo_reviews.js --production",
+    "test-reviews": "node --expose-gc --max-old-space-size=512 fetch_feefo_reviews.js",
+    "main": "node --max-old-space-size=512 main.js",
+    "main-memory-safe": "node --max-old-space-size=400 --expose-gc main.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.1",
+    "cheerio": "^1.1.2",
+    "dotenv": "^17.2.3",
+    "openai": "^6.9.1",
+    "puppeteer": "^21.11.0"
+  }
+}
