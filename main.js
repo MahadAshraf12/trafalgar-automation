@@ -39,15 +39,15 @@ function runCommand(command, args, cwd, description) {
 async function runAllPipelines() {
   console.log('🌟 TRAFALGAR AUTOMATION - MASTER PIPELINE');
   console.log('═'.repeat(50));
-  console.log('This will run all three data pipelines in sequence:');
+  console.log('This will run all four data pipelines in sequence:');
   console.log('1. Trafalgar (trafalgar/ folder)');
   console.log('2. Insight Vacations (insightvacations/ folder)');
   console.log('3. CostSaver (costsaver/ folder)');
+  console.log('4. G Adventures (g_adventures/ folder)');
   console.log('');
   console.log('🧠 Memory-optimized for low-RAM VPS (512MB)');
-  console.log('   - Batch processing (5 tours at a time)');
-  console.log('   - 2-second delays between batches');
-  console.log('   - Memory monitoring enabled');
+  console.log('   - Batch processing (50 tours at a time for G Adventures)');
+  console.log('   - Rate limiting and memory monitoring enabled');
   console.log('═'.repeat(50));
   console.log(`🧠 Starting memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
 
@@ -76,12 +76,21 @@ async function runAllPipelines() {
       'CostSaver Pipeline'
     );
 
+    // 4. Run G Adventures pipeline
+    await runCommand(
+      'node',
+      ['--max-old-space-size=512', 'main.js'],
+      join(__dirname, 'g_adventures'),
+      'G Adventures Pipeline'
+    );
+
     console.log('\n🎉 ALL PIPELINES COMPLETED SUCCESSFULLY!');
     console.log('═'.repeat(50));
     console.log('📊 Summary:');
     console.log('✅ Trafalgar data processed and inserted');
     console.log('✅ Insight Vacations data processed and inserted');
     console.log('✅ CostSaver data processed and inserted');
+    console.log('✅ G Adventures data processed and inserted');
     console.log(`🧠 Final memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
     console.log('═'.repeat(50));
     console.log('💡 Memory optimization tips for VPS:');
