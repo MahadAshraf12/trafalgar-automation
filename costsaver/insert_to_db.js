@@ -100,8 +100,8 @@ const tripsEntries = tripsData.map(trip => {
     duration: trip.duration,
     trip_current_price: trip.trip_current_price,
     reviews: trip.reviews,
-    avg_rating: null,
-    total_reviews: null,
+    avg_rating: trip.avg_rating || null,
+    total_reviews: trip.total_reviews || null,
     activity_level: null,  // ✅ CostSaver has no activity levels
     standardised_keywords: trip.standardised_keywords || [] // text[] column
   };
